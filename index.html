@@ -50,7 +50,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:34px}
 <body>
 <div class="wrap">
   <div class="gauge">
-    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v6</small></div>
+    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v7</small></div>
     <canvas id="tach" width="1360" height="1115"></canvas>
   </div>
   <div class="side">
@@ -216,7 +216,7 @@ async function initAudio(){
   const curve=new Float32Array(2048);for(let i=0;i<2048;i++){const x=i/1024-1;curve[i]=Math.tanh(x*2.2)/Math.tanh(2.2);}nodes.shaper.curve=curve;nodes.shaper.oversample="2x";
   nodes.hp=bq("highpass",32,0.7); nodes.shelf=bq("lowshelf",140,null,6);
   nodes.res=bq("peaking",170,1.1,9); nodes.res2=bq("peaking",520,1,3); nodes.lp=bq("lowpass",1500,0.8);
-  nodes.comp=ctx.createDynamicsCompressor(); nodes.comp.threshold.value=-14; nodes.comp.ratio.value=4; nodes.comp.attack.value=0.004; nodes.comp.release.value=0.12;
+  nodes.comp=ctx.createDynamicsCompressor(); nodes.comp.threshold.value=-12; nodes.comp.ratio.value=3; nodes.comp.attack.value=0.02; nodes.comp.release.value=0.12;
   nodes.master=g(); nodes.master.gain.value=(volEl.value/100)**1.6*0.9;
   node.connect(nodes.pre);nodes.pre.connect(nodes.shaper);nodes.shaper.connect(nodes.hp);nodes.hp.connect(nodes.shelf);
   nodes.shelf.connect(nodes.res);nodes.res.connect(nodes.res2);nodes.res2.connect(nodes.lp);nodes.lp.connect(nodes.comp);
@@ -259,7 +259,7 @@ function onSource(){
 function step(dt){
   const E=ENGINES[engKey], maxA=CARS[carKey].maxA, N=E.ratios.length;
   if(src==="demo"){
-    const vmax=70, target=throttleDown?maxA*Math.max(0,1-v/vmax)*(v<1?0.8:1):(v>0.3?-1.3:0);
+    const vmax=70, target=throttleDown?maxA*Math.max(0,1-v/vmax)*(v<1?0.8:1):(v>0.3?-2.4:0);
     a+= (target-a)*Math.min(1,dt*6); v=Math.max(0,v+a*dt); if(v===0&&!throttleDown)a=0;
   }else if(fix){
     const age=Math.min(1.6,performance.now()/1000-fix.at);
