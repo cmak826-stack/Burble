@@ -50,7 +50,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:34px}
 <body>
 <div class="wrap">
   <div class="gauge">
-    <div class="brand">Burb<span>le</span></div>
+    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v3</small></div>
     <canvas id="tach" width="1360" height="1115"></canvas>
   </div>
   <div class="side">
@@ -87,6 +87,10 @@ input[type=range]{width:100%;accent-color:var(--accent);height:34px}
   </div>
 </div>
 
+<script>
+/* ES5 error reporter: shows any script error (including parse errors in the main script) on screen. */
+window.onerror=function(msg,src,line){var el=document.getElementById("status");if(el)el.innerHTML='<span class="dot bad"></span>Error: '+msg+' (line '+line+')';};
+</script>
 <script>
 /* ---------- DSP (runs in AudioWorklet, or ScriptProcessor fallback) ---------- */
 const DSP_SRC = `
@@ -151,7 +155,7 @@ const CARS={rwd:{maxA:4.0},lr:{maxA:5.2},perf:{maxA:7.0}};
 const TIRE_C=2.12; // m, ~19" Model 3/Y tire
 
 /* ---------- Settings ---------- */
-const store={get(k,d){try{return localStorage.getItem(k)??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const store={get(k,d){try{var x=localStorage.getItem(k);return x==null?d:x}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 let engKey=store.get("eng","v8"), carKey=store.get("car","lr"), src=store.get("src","gps");
 function bindSeg(id,get,set){const el=document.getElementById(id);
   const sync=()=>el.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===get()));
@@ -217,7 +221,7 @@ function onFix(pos){
 }
 let fixes=0;
 function onGpsErr(e){gpsOk=false;gpsMsg=e.code===1?"Location is blocked for this site. Allow it in the browser's site settings, or use Demo.":e.code===3?"No GPS fix yet. Still trying…":"GPS unavailable: "+(e.message||"unknown error");}
-window.addEventListener("error",e=>{audioErr="Error: "+e.message;});
+window.addEventListener("error",e=>{audioErr="Error: "+e.message+" (line "+e.lineno+")";});
 function onSource(){
   document.getElementById("throttle").hidden=src!=="demo";
   if(src==="gps"&&running&&watchId==null&&navigator.geolocation){
@@ -326,7 +330,7 @@ startBtn.addEventListener("click",async()=>{
       await r;
       audioErr=ctx.state==="running"?"":"Audio is blocked. Tap Stop, then Start again.";
     }catch(e){audioErr="Audio failed to start: "+(e&&e.message||e);}
-    try{wake=await navigator.wakeLock?.request("screen");}catch(e){}
+    try{if(navigator.wakeLock)wake=await navigator.wakeLock.request("screen");}catch(e){}
   }else{
     running=false; startBtn.textContent="Start engine"; startBtn.classList.remove("on");
     post({amp:0}); setTimeout(()=>{if(!running&&ctx)ctx.suspend();},400);
