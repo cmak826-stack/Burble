@@ -50,7 +50,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:34px}
 <body>
 <div class="wrap">
   <div class="gauge">
-    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v3</small></div>
+    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v4</small></div>
     <canvas id="tach" width="1360" height="1115"></canvas>
   </div>
   <div class="side">
@@ -198,7 +198,7 @@ async function initAudio(){
 }
 function applyEngine(){
   const E=ENGINES[engKey]; post({cfg:E.dsp});
-  if(!ctx)return; const t=E.tone, now=ctx.currentTime;
+  if(!ctx||!nodes.res)return; const t=E.tone, now=ctx.currentTime;
   nodes.res.frequency.setTargetAtTime(t.res,now,0.05);nodes.res.Q.value=t.resQ;nodes.res.gain.value=t.resG;
   nodes.res2.frequency.setTargetAtTime(t.res2,now,0.05);nodes.res2.gain.value=t.res2G;nodes.shelf.gain.value=t.bass;
 }
@@ -264,7 +264,7 @@ function step(dt){
   if(shiftCut>0||cut)amp=0.18;
   const k=Math.min(1,dt*(shiftCool>0.45?18:9)); rpm+=(target-rpm)*k;
   post({rpm,load:cut?0:load,over:rpm>2300?over:over*0.3,amp:running?amp:0});
-  if(ctx){const t=E.tone,now=ctx.currentTime;
+  if(ctx&&nodes.lp){const t=E.tone,now=ctx.currentTime;
     nodes.lp.frequency.setTargetAtTime(t.lpBase+rpm*t.lpRpm+load*t.lpLoad,now,0.05);
     nodes.pre.gain.setTargetAtTime(1.2+load*t.drive,now,0.05);}
   return {load,over};
