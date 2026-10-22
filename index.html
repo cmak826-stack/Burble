@@ -50,7 +50,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:34px}
 <body>
 <div class="wrap">
   <div class="gauge">
-    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v4</small></div>
+    <div class="brand">Burb<span>le</span> <small style="font-size:14px;color:var(--dim);letter-spacing:.1em">v5</small></div>
     <canvas id="tach" width="1360" height="1115"></canvas>
   </div>
   <div class="side">
@@ -96,13 +96,22 @@ window.onerror=function(msg,src,line){var el=document.getElementById("status");i
 const DSP_SRC = `
 class EngineDSP{
   constructor(sr){this.sr=sr;this.ph=0;this.rpm=800;this.tRpm=800;this.load=0;this.over=0;this.amp=0;this.tAmp=0;
-    this.cfg=null;this.env=new Float32Array(16);this.ns=22695477;this.pop=0;this.popSide=false;}
-  set(p){if(p.cfg)this.cfg=p.cfg;if(p.rpm!=null)this.tRpm=p.rpm;if(p.load!=null)this.load=p.load;
+    this.cfg=null;this.env=new Float32Array(16);this.ns=22695477;
+    this.nz=0;this.nz2=0;this.y=[0,0,0,0];this.y2=[0,0,0,0];
+    this.pop=0;this.popSide=0;this.popKick=0;this.burst=0;this.burstWait=0;}
+  set(p){
+    if(p.cfg){this.cfg=p.cfg;const c=p.cfg,sr=this.sr;
+      const res=(f,bw)=>{const r=Math.exp(-Math.PI*bw/sr),w=2*Math.PI*f/sr;return{a1:2*r*Math.cos(w),a2:-r*r,g:(1-r)*Math.sqrt(1-2*r*Math.cos(2*w)+r*r)};};
+      this.r1=res(c.body,c.bodyBw);this.r2=res(c.body2,c.body2Bw);
+      this.kn=1-Math.exp(-2*Math.PI*c.nzHz/sr);this.kp=1-Math.exp(-2*Math.PI*c.popHz/sr);
+      this.popDec=Math.exp(-1/(sr*c.popTau));}
+    if(p.rpm!=null)this.tRpm=p.rpm;if(p.load!=null)this.load=p.load;
     if(p.over!=null)this.over=p.over;if(p.amp!=null)this.tAmp=p.amp;}
   rnd(){this.ns=(Math.imul(this.ns,1664525)+1013904223)>>>0;return this.ns/4294967296;}
   render(L,R,n){
     const c=this.cfg;if(!c){L.fill(0);R.fill(0);return;}
     const kr=1-Math.exp(-1/(this.sr*0.018)), ka=1-Math.exp(-1/(this.sr*0.012));
+    const r1=this.r1,r2=this.r2,y=this.y,y2=this.y2;
     for(let i=0;i<n;i++){
       this.rpm+=(this.tRpm-this.rpm)*kr; this.amp+=(this.tAmp-this.amp)*ka;
       const prev=this.ph; let ph=prev+this.rpm/120/this.sr, wrapped=false;
@@ -110,21 +119,34 @@ class EngineDSP{
       const interval=120/(this.rpm*c.n), dec=Math.exp(-1/(this.sr*interval*c.tau));
       for(let j=0;j<c.n;j++){
         const f=c.fire[j];
-        const hit=wrapped?(f>prev||f<=ph):(f>prev&&f<=ph);
-        if(hit){
-          const base=this.over>0.05?0.10+0.12*(1-this.over):0.28+0.72*this.load;
+        if(wrapped?(f>prev||f<=ph):(f>prev&&f<=ph)){
+          const base=this.over>0.05?0.12+0.12*(1-this.over):0.3+0.7*this.load;
           this.env[j]=c.amp[j]*base*this.amp*(1+(this.rnd()-0.5)*c.rough);
         }
       }
+      // band-limited noise: no white hiss, so pulses read as thumps not rasp
+      this.nz+=((this.rnd()*2-1)-this.nz)*this.kn; const nz=this.nz*2.5;
       let l=0,r=0;
       for(let j=0;j<c.n;j++){const e=this.env[j];if(e>1e-5){
-        const s=e*(1-c.noise+c.noise*(this.rnd()*2-1));
+        const s=e*(1-c.noise+c.noise*nz);
         if(c.bank[j])r+=s;else l+=s;this.env[j]=e*dec;}}
-      if(this.over>0.15&&this.rnd()<this.over*c.crackle/this.sr){this.pop=0.5+this.rnd()*0.9;this.popSide=this.rnd()<0.5;}
-      if(this.pop>1e-4){const s=this.pop*(this.rnd()*2-1);if(this.popSide)r+=s;else l+=s;this.pop*=0.9983;}
-      L[i]=l;R[i]=r;
+      // overrun crackle: clustered, low-passed bangs that also kick the exhaust body
+      if(this.burst>0){this.burstWait--;if(this.burstWait<=0){this.burst--;this.firePop(0.6);}}
+      else if(this.over>0.15&&this.rnd()<this.over*c.crackle/this.sr){this.burst=Math.floor(this.rnd()*3);this.burstWait=this.sr*(0.02+this.rnd()*0.05);this.firePop(1);}
+      let pl=0,pr=0;
+      if(this.pop>1e-4){this.nz2+=((this.rnd()*2-1)-this.nz2)*this.kp;const s=this.pop*this.nz2*3+this.popKick;
+        this.popKick=0;if(this.popSide)pr=s;else pl=s;this.pop*=this.popDec;}
+      // exhaust body resonators per bank
+      const inL=l+pl, inR=r+pr;
+      const bl=r1.g*inL+r1.a1*y[0]+r1.a2*y[1]; y[1]=y[0]; y[0]=bl;
+      const br=r1.g*inR+r1.a1*y[2]+r1.a2*y[3]; y[3]=y[2]; y[2]=br;
+      const cl=r2.g*inL+r2.a1*y2[0]+r2.a2*y2[1]; y2[1]=y2[0]; y2[0]=cl;
+      const cr=r2.g*inR+r2.a1*y2[2]+r2.a2*y2[3]; y2[3]=y2[2]; y2[2]=cr;
+      L[i]=inL*c.direct+bl*c.bodyGain+cl*c.body2Gain;
+      R[i]=inR*c.direct+br*c.bodyGain+cr*c.body2Gain;
     }
   }
+  firePop(s){const a=(0.5+this.rnd()*0.8)*s*Math.min(1,this.amp+0.4);this.pop=a;this.popKick=a*4;this.popSide=this.rnd()<0.5;}
 }`;
 
 /* ---------- Engine definitions ---------- */
@@ -141,14 +163,14 @@ const ENGINES={
   v8:{name:"Cross-plane V8", idle:760, redline:7000, launch:2400,
     ratios:[4.24,2.54,1.67,1.24,1.00,0.79], final:3.55,
     dsp:Object.assign(fireTable([1,5,4,8,6,3,7,2],90,{1:1,2:1,3:1,4:1,5:0,6:0,7:0,8:0},7),
-      {tau:0.42,noise:0.32,rough:0.22,crackle:55}),
-    tone:{res:170,resQ:1.1,resG:9,res2:520,res2G:3,bass:7,lpBase:700,lpRpm:0.55,lpLoad:2200,drive:2.2},
+      {tau:0.55,noise:0.18,rough:0.22,crackle:45,nzHz:700,direct:0.35,body:78,bodyBw:30,bodyGain:2.2,body2:165,body2Bw:70,body2Gain:1.2,popHz:900,popTau:0.04}),
+    tone:{res:110,resQ:0.9,resG:6,res2:340,res2G:2,bass:10,lpBase:420,lpRpm:0.32,lpLoad:1300,drive:1.6},
     lope:32},
   f6:{name:"Flat-six", idle:950, redline:9000, launch:3200,
     ratios:[3.75,2.38,1.72,1.34,1.11,0.96,0.84], final:4.30,
     dsp:Object.assign(fireTable([1,6,2,4,3,5],120,{1:0,2:0,3:0,4:1,5:1,6:1},3),
-      {tau:0.36,noise:0.42,rough:0.12,crackle:35}),
-    tone:{res:390,resQ:1.5,resG:8,res2:1300,res2G:5,bass:3,lpBase:1100,lpRpm:0.75,lpLoad:2600,drive:2.6},
+      {tau:0.45,noise:0.24,rough:0.12,crackle:35,nzHz:1400,direct:0.5,body:140,bodyBw:60,bodyGain:1.6,body2:310,body2Bw:120,body2Gain:1.1,popHz:1500,popTau:0.03}),
+    tone:{res:280,resQ:1.1,resG:6,res2:1050,res2G:3,bass:7,lpBase:750,lpRpm:0.5,lpLoad:2000,drive:2.0},
     lope:12}
 };
 const CARS={rwd:{maxA:4.0},lr:{maxA:5.2},perf:{maxA:7.0}};
@@ -187,7 +209,7 @@ async function initAudio(){
   const g=(t)=>ctx.createGain(), bq=(type,f,q,gain)=>{const b=ctx.createBiquadFilter();b.type=type;b.frequency.value=f;if(q!=null)b.Q.value=q;if(gain!=null)b.gain.value=gain;return b;};
   nodes.pre=g(); nodes.shaper=ctx.createWaveShaper();
   const curve=new Float32Array(2048);for(let i=0;i<2048;i++){const x=i/1024-1;curve[i]=Math.tanh(x*2.2)/Math.tanh(2.2);}nodes.shaper.curve=curve;nodes.shaper.oversample="2x";
-  nodes.hp=bq("highpass",32,0.7); nodes.shelf=bq("lowshelf",110,null,6);
+  nodes.hp=bq("highpass",32,0.7); nodes.shelf=bq("lowshelf",140,null,6);
   nodes.res=bq("peaking",170,1.1,9); nodes.res2=bq("peaking",520,1,3); nodes.lp=bq("lowpass",1500,0.8);
   nodes.comp=ctx.createDynamicsCompressor(); nodes.comp.threshold.value=-14; nodes.comp.ratio.value=4; nodes.comp.attack.value=0.004; nodes.comp.release.value=0.12;
   nodes.master=g(); nodes.master.gain.value=(volEl.value/100)**1.6*0.9;
